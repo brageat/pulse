@@ -129,7 +129,10 @@ RestoreSettings(s) {
 ; ---- Logic ------------------------------------------------
 ToggleClicking() {
     global App
-    App.clicking ? StopClicking() : StartClicking()
+    if App.clicking
+        StopClicking()
+    else
+        StartClicking()
 }
 
 StartClicking() {
