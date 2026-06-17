@@ -3,7 +3,7 @@
 
 ; ============================================================
 ;  AutoClicker  -  AutoHotkey v2
-;  F6 = Start/Stop (global)   F8 = Capture cursor position
+;  Start/Stop hotkey is configurable (default F6)   F8 = Capture cursor position
 ;  Action mode switches between mouse clicks and key presses.
 ;  Dark mode is toggleable via the checkbox.
 ; ============================================================
@@ -11,13 +11,13 @@
 CoordMode("Mouse", "Screen")   ; use absolute screen coordinates
 
 App := { clicking: false, count: 0, dark: true, picking: false, onTop: true,
-         positions: [], posIndex: 0 }
+         positions: [], posIndex: 0, toggleKey: "F6", capturing: false }
 
 BuildGui()
 
 ; ---- Global hotkeys ---------------------------------------
-Hotkey("F6", (*) => ToggleClicking())
-Hotkey("F8", ArmPicker)
+SetToggleHotkey(App.toggleKey)        ; start/stop (user-configurable via "Set...")
+Hotkey("F8", ArmPicker)               ; arm the position picker
 
 ; ---- GUI builder (re-run to re-theme) ---------------------
 BuildGui() {
@@ -123,26 +123,34 @@ BuildGui() {
     App.countEdit := g.Add("Edit", "x115 y465 w55 Number Background" ctrlBg)
     g.Add("Text", "x178 y468 w50", "times")
 
+    ; Hotkey -- the global start/stop key (configurable)
+    g.Add("GroupBox", "x10 y500 w310 h48", "Start/Stop Hotkey")
+    g.Add("Text", "x22 y523 w52", "Hotkey:")
+    App.hotkeyDisplay := g.Add("Text", "x80 y521 w150 Center Border", App.toggleKey)
+    setHk := g.Add("Button", "x238 y518 w72 h23", "Set...")
+    setHk.SetFont("c" btnText)
+    setHk.OnEvent("Click", CaptureToggleHotkey)
+
     ; Controls
-    start := g.Add("Button", "x10 y502 w150 h36", "Start (F6)")
-    start.SetFont("c" btnText)
-    start.OnEvent("Click", (*) => StartClicking())
-    stop := g.Add("Button", "x170 y502 w150 h36", "Stop (F6)")
-    stop.SetFont("c" btnText)
-    stop.OnEvent("Click", (*) => StopClicking())
+    App.startBtn := g.Add("Button", "x10 y558 w150 h36", "Start (" App.toggleKey ")")
+    App.startBtn.SetFont("c" btnText)
+    App.startBtn.OnEvent("Click", (*) => StartClicking())
+    App.stopBtn := g.Add("Button", "x170 y558 w150 h36", "Stop (" App.toggleKey ")")
+    App.stopBtn.SetFont("c" btnText)
+    App.stopBtn.OnEvent("Click", (*) => StopClicking())
 
-    App.status := g.Add("Text", "x10 y548 w310 Center", "Idle")
+    App.status := g.Add("Text", "x10 y604 w310 Center", "Idle")
 
-    App.darkCheck := g.Add("Checkbox", "x10 y576 w90 " (App.dark ? "Checked" : ""), "Dark mode")
+    App.darkCheck := g.Add("Checkbox", "x10 y632 w90 " (App.dark ? "Checked" : ""), "Dark mode")
     App.darkCheck.OnEvent("Click", ToggleDark)
 
-    App.topCheck := g.Add("Checkbox", "x110 y576 w120 " (App.onTop ? "Checked" : ""), "Always on top")
+    App.topCheck := g.Add("Checkbox", "x110 y632 w120 " (App.onTop ? "Checked" : ""), "Always on top")
     App.topCheck.OnEvent("Click", ToggleOnTop)
 
     App.mouseCtrls := mouseCtrls
     App.keyCtrls   := keyCtrls
 
-    g.Show("w330 h604")
+    g.Show("w330 h660")
 
     RestoreSettings(s)
     RefreshPosList()                  ; rebuild the list view from App.positions
@@ -180,12 +188,13 @@ SnapshotSettings() {
     if !App.HasOwnProp("interval")    ; first build -> defaults
         return { interval: 100, random: 0, button: 1, type: 1,
                  fixed: false, x: "", y: "", repeatCount: false, count: 100,
-                 action: 1, keys: "" }
+                 action: 1, keys: "", hotkey: App.toggleKey }
     return { interval: App.interval.Value,   random: App.random.Value,
              button: App.button.Value,       type: App.type.Value,
              fixed: App.posFixed.Value,       x: App.x.Value, y: App.y.Value,
              repeatCount: App.repeatCount.Value, count: App.countEdit.Value,
-             action: App.action.Value,       keys: App.keysEdit.Value }
+             action: App.action.Value,       keys: App.keysEdit.Value,
+             hotkey: App.toggleKey }
 }
 
 RestoreSettings(s) {
@@ -201,6 +210,96 @@ RestoreSettings(s) {
     App.countEdit.Value := s.count
     App.action.Choose(s.action)
     App.keysEdit.Value := s.keys
+    App.hotkeyDisplay.Text := s.hotkey
+}
+
+; ---- Configurable start/stop hotkey -----------------------
+; The handler is named (not a closure) so Hotkey() can re-target the
+; same callback when the binding changes.
+ToggleHotkeyHandler(*) {
+    ToggleClicking()
+}
+
+; Register/replace the global start/stop hotkey. Returns false (and
+; leaves the old binding in place) if the key string is invalid.
+SetToggleHotkey(newKey) {
+    global App
+    old := App.HasOwnProp("toggleKey") ? App.toggleKey : ""
+    try {
+        Hotkey(newKey, ToggleHotkeyHandler, "On")
+    } catch {
+        if App.HasOwnProp("status")
+            App.status.Value := "Invalid hotkey: " newKey
+        return false
+    }
+    if (old != "" && old != newKey)
+        try Hotkey(old, "Off")        ; disable the previous binding
+    App.toggleKey := newKey
+    UpdateHotkeyLabels()
+    return true
+}
+
+; Keep the on-screen labels in sync with the active hotkey.
+UpdateHotkeyLabels() {
+    global App
+    if App.HasOwnProp("hotkeyDisplay")
+        App.hotkeyDisplay.Text := App.toggleKey
+    if App.HasOwnProp("startBtn")
+        App.startBtn.Text := "Start (" App.toggleKey ")"
+    if App.HasOwnProp("stopBtn")
+        App.stopBtn.Text := "Stop (" App.toggleKey ")"
+}
+
+; "Set..." arms a one-shot capture: the next key you press (with any
+; modifiers) becomes the global start/stop hotkey. Esc cancels.
+CaptureToggleHotkey(*) {
+    global App
+    if App.capturing
+        return
+    App.capturing := true
+    old := App.toggleKey
+    if (old != "")                    ; don't let the old key fire mid-capture
+        try Hotkey(old, "Off")
+    App.status.Value := "Press the new start/stop hotkey (Esc to cancel)..."
+
+    ih := InputHook("T10")            ; 10s timeout so we never hang
+    ih.KeyOpt("{All}", "E")           ; any key ends the capture
+    ih.Start()
+    ih.Wait()
+    App.capturing := false
+
+    key := ih.EndKey
+    if (key = "" || key = "Escape" || IsModifierKey(key)) {
+        if (old != "")
+            try Hotkey(old, "On")     ; restore the previous binding
+        App.status.Value := "Hotkey unchanged (" old ")"
+        return
+    }
+
+    mods := ""
+    em := ih.EndMods                  ; e.g. "<^>!" -> collapse to "^!"
+    if InStr(em, "^")
+        mods .= "^"
+    if InStr(em, "!")
+        mods .= "!"
+    if InStr(em, "+")
+        mods .= "+"
+    if InStr(em, "#")
+        mods .= "#"
+    newKey := mods . key
+
+    if SetToggleHotkey(newKey)
+        App.status.Value := "Start/stop hotkey set to " newKey
+    else if (old != "")
+        try Hotkey(old, "On")         ; registration failed -> keep the old one
+}
+
+IsModifierKey(k) {
+    static mods := Map("Control",1, "LControl",1, "RControl",1,
+                       "Alt",1, "LAlt",1, "RAlt",1,
+                       "Shift",1, "LShift",1, "RShift",1,
+                       "LWin",1, "RWin",1)
+    return mods.Has(k)
 }
 
 ; ---- Logic ------------------------------------------------

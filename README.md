@@ -14,8 +14,12 @@ A simple dark-mode autoclicker for Windows, written in AutoHotkey v2. It can rep
   and repeat settings drive whichever is selected.
 - **Configurable interval** in milliseconds, with optional `+/-` randomization to vary the timing.
 - **Global hotkeys** that work even when the window isn't focused:
-  - **F6** — start / stop
+  - **Start / stop** — **F6** by default, and **rebindable** (see below)
   - **F8** — arm the position picker (then click the target to add it; **Esc** cancels) — mouse mode only
+- **Configurable start/stop hotkey** — press **Set...** in the *Start/Stop Hotkey* box, then
+  press the key you want (with optional **Ctrl/Alt/Shift/Win** modifiers); **Esc** keeps the
+  current binding. The Start/Stop buttons update to show the active key. Function keys (F1–F12)
+  are recommended, since a plain letter or digit would be intercepted globally while the app runs.
 - **Mouse button & click type** — Left / Right / Middle, Single or Double click.
 - **Click location** — click at the current cursor position, or at one or more **fixed
   positions**. Add a point by typing its X/Y and pressing **Add**, or by pressing **Pick**
@@ -69,12 +73,14 @@ Double-click `autoclicker.ahk`, or from a terminal:
    the list in order. Use **Remove**/**Clear** to manage the list.
    **Key press** — type the **Key(s)** to send (AutoHotkey send syntax, e.g. `{Space}`).
 4. Choose **Until stopped** or **Stop after N times**.
-5. Press **Start** (or **F6**). Press **F6** again to stop.
+5. (Optional) Change the start/stop hotkey: press **Set...**, then press the key you want
+   (Esc to keep the current one).
+6. Press **Start** (or the start/stop hotkey, **F6** by default). Press it again to stop.
 
 ## Notes
 
 - Mouse coordinates are absolute **screen** coordinates.
-- In **Key press** mode the keys go to whatever window has focus. Start with **F6** after
-  focusing the target window — the on-screen **Start** button leaves this window focused,
-  so the first keys would land here instead.
+- In **Key press** mode the keys go to whatever window has focus. Start with the start/stop
+  hotkey (**F6** by default) after focusing the target window — the on-screen **Start** button
+  leaves this window focused, so the first keys would land here instead.
 - Use responsibly — many games and applications prohibit automated input.
