@@ -2,18 +2,25 @@
 #SingleInstance Force
 
 ; ============================================================
-;  AutoClicker  -  AutoHotkey v2
+;  Pulse  -  AutoHotkey v2
 ;  Start/Stop hotkey is configurable (default F6)   F8 = Capture cursor position
 ;  Action mode switches between mouse clicks and key presses.
 ;  Dark mode is toggleable via the checkbox.
 ;  A small on-screen HUD (top-right corner) shows on/off status.
+;  Checks GitHub on launch and reports if a newer version exists.
 ; ============================================================
 
 CoordMode("Mouse", "Screen")   ; use absolute screen coordinates
 
 App := { clicking: false, count: 0, dark: true, picking: false, onTop: false,
          positions: [], posIndex: 0, toggleKey: "F6", capturing: false,
-         hud: true, clickTimes: [] }
+         hud: true, clickTimes: [],
+         version: "1.1.0", updateAvailable: false, latestVersion: "",
+         updateChecked: false }
+
+; Where the update checker looks for the latest published version.
+UPDATE_VERSION_URL := "https://raw.githubusercontent.com/brageat/pulse/main/VERSION"
+UPDATE_PAGE_URL    := "https://github.com/brageat/pulse"
 
 BuildGui()
 if App.hud                            ; HUD is shown by default
@@ -22,6 +29,10 @@ if App.hud                            ; HUD is shown by default
 ; ---- Global hotkeys ---------------------------------------
 SetToggleHotkey(App.toggleKey)        ; start/stop (user-configurable via "Set...")
 Hotkey("F8", ArmPicker)               ; arm the position picker
+
+; Check GitHub for a newer version shortly after launch (off the UI thread's
+; critical path; -1 => run once). Silent so a failed check stays quiet.
+SetTimer(() => CheckForUpdate(true), -1500)
 
 ; ---- GUI builder (re-run to re-theme) ---------------------
 BuildGui() {
@@ -40,7 +51,7 @@ BuildGui() {
     }
     btnText := "101010"               ; readable on the system button face
 
-    g := Gui("", "AutoClicker")
+    g := Gui("", "Pulse")
     App.gui := g
     g.OnEvent("Close", (*) => ExitApp())
     g.Opt(App.onTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
@@ -154,14 +165,19 @@ BuildGui() {
     App.hudCheck := g.Add("Checkbox", "x240 y632 w85 " (App.hud ? "Checked" : ""), "Show HUD")
     App.hudCheck.OnEvent("Click", ToggleHud)
 
+    ; Update status / link (click to re-check, or to open the download page)
+    App.updateLink := g.Add("Text", "x10 y660 w310 Center", "Pulse v" App.version)
+    App.updateLink.OnEvent("Click", OnUpdateClick)
+
     App.mouseCtrls := mouseCtrls
     App.keyCtrls   := keyCtrls
 
-    g.Show("w330 h660")
+    g.Show("w330 h688")
 
     RestoreSettings(s)
     RefreshPosList()                  ; rebuild the list view from App.positions
     ApplyActionMode()                 ; show the controls for the current mode
+    RefreshUpdateText()               ; keep any update notice across re-themes
     UpdateStatus()
     if App.clicking                   ; resume loop if we were clicking
         SetTimer(DoClick, -NextInterval())
@@ -210,18 +226,21 @@ BuildHud() {
     global App
     ; -DPIScale so positions/sizes are real pixels (matches MonitorGetWorkArea),
     ; which keeps the window fully on-screen at any display scaling.
-    h := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "AutoClicker HUD")
+    h := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "Pulse HUD")
     App.hudGui := h
     h.Opt("+E0x20")                  ; WS_EX_TRANSPARENT -> clicks pass through
     h.MarginX := 14, h.MarginY := 8
     h.BackColor := "161616"
-    h.SetFont("s9 cDDDDDD", "Segoe UI")
+
+    ; A Text control's height is fixed at Add() time from the *current* font,
+    ; so set each line's font BEFORE adding it -- enlarging it afterward would
+    ; leave the control too short and clip the text.
+    h.SetFont("s15 bold cDDDDDD", "Segoe UI")
     App.hudStatus := h.Add("Text", "w180 Center", "OFF")
-    App.hudStatus.SetFont("s14 bold")
+    h.SetFont("s8 norm cAAAAAA")
     App.hudCount  := h.Add("Text", "w180 Center", "Idle")
-    App.hudCount.SetFont("s8 cAAAAAA")
+    h.SetFont("s9 cCCCCCC")
     App.hudCps    := h.Add("Text", "w180 Center", "0.0 cps")
-    App.hudCps.SetFont("s9 cCCCCCC")
 }
 
 UpdateHud() {
@@ -576,6 +595,91 @@ EndPick() {
     App.picking := false
     Hotkey("~LButton", "Off")
     Hotkey("Escape", "Off")
+}
+
+; ---- Update check -----------------------------------------
+; Compares this build's version (App.version) against the VERSION file
+; published on the repo's main branch. The bottom label shows the result
+; and, when an update exists, links to the download page.
+CheckForUpdate(silent := false) {
+    global App
+    SetUpdateText("Checking for updates...", "999999")
+    remote := FetchRemoteVersion()
+    if (remote = "") {                         ; offline / blocked / not found
+        App.updateAvailable := false
+        SetUpdateText(silent ? "Pulse v" App.version : "Update check failed - click to retry",
+            "999999")
+        return
+    }
+    if (CompareVersions(remote, App.version) > 0) {
+        App.updateAvailable := true
+        App.latestVersion := remote
+    } else {
+        App.updateAvailable := false
+    }
+    App.updateChecked := true
+    RefreshUpdateText()
+}
+
+; Fetch the published version string. Returns "" on any failure.
+FetchRemoteVersion() {
+    global UPDATE_VERSION_URL
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.Open("GET", UPDATE_VERSION_URL "?_=" A_TickCount, true)   ; bust caches
+        req.SetTimeouts(3000, 3000, 3000, 4000)
+        req.Send()
+        req.WaitForResponse(6)
+        if (req.Status != 200)
+            return ""
+        v := LTrim(Trim(req.ResponseText, " `t`r`n"), "vV")
+        return RegExMatch(v, "^\d+(\.\d+)*$") ? v : ""
+    } catch {
+        return ""
+    }
+}
+
+; Numeric, dot-separated comparison. 1 if a>b, -1 if a<b, 0 if equal.
+CompareVersions(a, b) {
+    pa := StrSplit(a, "."), pb := StrSplit(b, ".")
+    loop Max(pa.Length, pb.Length) {
+        x := A_Index <= pa.Length ? Integer(pa[A_Index]) : 0
+        y := A_Index <= pb.Length ? Integer(pb[A_Index]) : 0
+        if (x != y)
+            return x > y ? 1 : -1
+    }
+    return 0
+}
+
+; Render the current update state onto the bottom label.
+RefreshUpdateText() {
+    global App
+    if !App.HasOwnProp("updateLink")
+        return
+    if App.updateAvailable
+        SetUpdateText("Update available: v" App.latestVersion " - click to download", "FFD24D")
+    else if App.updateChecked
+        SetUpdateText("Pulse v" App.version " (up to date)", "6FBF73")
+    else
+        SetUpdateText("Pulse v" App.version, "999999")
+}
+
+SetUpdateText(txt, color) {
+    global App
+    if !App.HasOwnProp("updateLink")
+        return
+    App.updateLink.Text := txt
+    App.updateLink.SetFont("c" color)
+}
+
+; Clicking the label opens the download page if an update is waiting,
+; otherwise it re-runs the check.
+OnUpdateClick(*) {
+    global App, UPDATE_PAGE_URL
+    if App.updateAvailable
+        Run(UPDATE_PAGE_URL)
+    else
+        CheckForUpdate(false)
 }
 
 ; Paint the window title bar to match the theme (Win10 2004+/Win11).
