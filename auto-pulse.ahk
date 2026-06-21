@@ -16,7 +16,7 @@ CoordMode("Mouse", "Screen")   ; use absolute screen coordinates
 App := { clicking: false, count: 0, dark: true, picking: false, onTop: false,
          positions: [], posIndex: 0, toggleKey: "F6", capturing: false,
          hud: true, clickTimes: [],
-         version: "1.2.3", updateAvailable: false, latestVersion: "",
+         version: "1.2.4", updateAvailable: false, latestVersion: "",
          updateChecked: false }
 
 ; Where the update checker looks for the latest published version.
@@ -219,35 +219,13 @@ ShowHud() {
         h.Show("Hide AutoSize")             ; size to the text in real pixels (DPI-correct)
         WinGetPos(, , &w, , h.Hwnd)         ; actual window width incl. resize frame
         MonitorGetWorkArea(MonitorGetPrimary(), , &top, &right)
-        h.Show(Format("x{} y{} NoActivate", right - w, top))   ; into the top-right corner...
-        SnapHudToCorner(h.Hwnd, right, top) ; ...then trim the invisible resize border
+        h.Show(Format("x{} y{} NoActivate", right - w, top))   ; flush into the top-right corner
         App.hudPlaced := true
     } else {
         h.Show("NoActivate")                ; reuse wherever the user last moved/sized it
     }
     WinSetTransparent(225, h.Hwnd)          ; slightly see-through
     UpdateHud()
-}
-
-; A +Resize window's frame includes an invisible DWM "grab" border (9px here,
-; wider at higher DPI) that GetWindowRect counts but you can't see -- so snapping
-; the window rect to the screen edge leaves the *visible* edge a few px short.
-; Measure that border (window rect vs DWM's extended frame bounds) and nudge the
-; window so the visible top-right corner is genuinely flush.
-SnapHudToCorner(hwnd, right, top) {
-    WinGetPos(&wx, &wy, &ww, , hwnd)
-    rc := Buffer(16, 0)
-    ; DWMWA_EXTENDED_FRAME_BOUNDS = 9 -> the *visible* window bounds
-    if (DllCall("dwmapi\DwmGetWindowAttribute", "ptr", hwnd, "uint", 9, "ptr", rc, "uint", 16) != 0)
-        return                              ; no DWM -> keep the naive position
-    borderR := (wx + ww) - NumGet(rc, 8, "int")   ; invisible border on the right
-    borderT := NumGet(rc, 4, "int") - wy          ; invisible border on top (usually 0)
-    if (borderR < 0 || borderR > 40)              ; ignore anything implausible
-        borderR := 0
-    if (borderT < 0 || borderT > 40)
-        borderT := 0
-    if (borderR || borderT)
-        WinMove(right - ww + borderR, top - borderT, , , "ahk_id " hwnd)
 }
 
 BuildHud() {
