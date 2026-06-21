@@ -15,7 +15,7 @@ CoordMode("Mouse", "Screen")   ; use absolute screen coordinates
 App := { clicking: false, count: 0, dark: true, picking: false, onTop: false,
          positions: [], posIndex: 0, toggleKey: "F6", capturing: false,
          hud: true, clickTimes: [],
-         version: "1.1.0", updateAvailable: false, latestVersion: "",
+         version: "1.2.0", updateAvailable: false, latestVersion: "",
          updateChecked: false }
 
 ; Where the update checker looks for the latest published version.
@@ -619,6 +619,20 @@ CheckForUpdate(silent := false) {
     }
     App.updateChecked := true
     RefreshUpdateText()
+    if App.updateAvailable
+        NotifyUpdate()
+}
+
+; Pop up a notice with the download link whenever a newer version is found.
+NotifyUpdate() {
+    global App, UPDATE_PAGE_URL
+    msg := "A new version of Pulse is available.`n`n"
+         . "You have:`tv" App.version "`n"
+         . "Latest:`tv" App.latestVersion "`n`n"
+         . "Get the new version here:`n" UPDATE_PAGE_URL "`n`n"
+         . "Open the download page now?"
+    if (MsgBox(msg, "Pulse - update available", "YesNo Iconi 0x40000") = "Yes")
+        Run(UPDATE_PAGE_URL)
 }
 
 ; Fetch the published version string. Returns "" on any failure.

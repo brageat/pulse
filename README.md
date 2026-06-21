@@ -39,11 +39,13 @@ repeatedly **click the mouse** or **press keys** on a timer.
   mode), so you can see the clicker's state at a glance without the main window. **On by
   default** — toggle it with the **Show HUD** checkbox. It's always on top and *click-through*
   (clicks pass straight to whatever is underneath), so it never gets in the way.
-- **Update check** — on launch Pulse checks GitHub for a newer version and shows the result
-  in the strip at the bottom of the window: **"Pulse vX.Y.Z (up to date)"**, or a highlighted
+- **Update check** — on launch Pulse checks GitHub for a newer version. If one is found, a
+  **popup** appears with the download link and offers to open it for you. The bottom strip
+  also reflects the result: **"Pulse vX.Y.Z (up to date)"**, or a highlighted
   **"Update available: vX.Y.Z — click to download"**. Click that line to open the
   [download page](https://github.com/brageat/pulse); when you're up to date, clicking it
-  re-runs the check. The check is best-effort — if you're offline it just stays quiet.
+  re-runs the check (and re-shows the popup if an update is waiting). The check is
+  best-effort — if you're offline it just stays quiet.
 
 ## Requirements
 
