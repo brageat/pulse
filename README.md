@@ -33,7 +33,12 @@ A simple dark-mode autoclicker for Windows, written in AutoHotkey v2. It can rep
 - **Dark mode** UI (dark window, inputs, and title bar) — toggle it on/off with the
   **Dark mode** checkbox; your settings are preserved when switching.
 - **Always on top** — keep the window above other windows; toggle with the
-  **Always on top** checkbox (on by default).
+  **Always on top** checkbox (off by default).
+- **Status HUD** — a small overlay tucked into the **top-right corner** of the screen that
+  shows **ON / OFF**, the running count, and the live **CPS** (clicks per second; `kps` in key
+  mode), so you can see the clicker's state at a glance without the main window. **On by
+  default** — toggle it with the **Show HUD** checkbox. It's always on top and *click-through*
+  (clicks pass straight to whatever is underneath), so it never gets in the way.
 
 ## Requirements
 

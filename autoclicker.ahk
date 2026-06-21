@@ -6,14 +6,18 @@
 ;  Start/Stop hotkey is configurable (default F6)   F8 = Capture cursor position
 ;  Action mode switches between mouse clicks and key presses.
 ;  Dark mode is toggleable via the checkbox.
+;  A small on-screen HUD (top-right corner) shows on/off status.
 ; ============================================================
 
 CoordMode("Mouse", "Screen")   ; use absolute screen coordinates
 
-App := { clicking: false, count: 0, dark: true, picking: false, onTop: true,
-         positions: [], posIndex: 0, toggleKey: "F6", capturing: false }
+App := { clicking: false, count: 0, dark: true, picking: false, onTop: false,
+         positions: [], posIndex: 0, toggleKey: "F6", capturing: false,
+         hud: true, clickTimes: [] }
 
 BuildGui()
+if App.hud                            ; HUD is shown by default
+    ShowHud()
 
 ; ---- Global hotkeys ---------------------------------------
 SetToggleHotkey(App.toggleKey)        ; start/stop (user-configurable via "Set...")
@@ -147,6 +151,9 @@ BuildGui() {
     App.topCheck := g.Add("Checkbox", "x110 y632 w120 " (App.onTop ? "Checked" : ""), "Always on top")
     App.topCheck.OnEvent("Click", ToggleOnTop)
 
+    App.hudCheck := g.Add("Checkbox", "x240 y632 w85 " (App.hud ? "Checked" : ""), "Show HUD")
+    App.hudCheck.OnEvent("Click", ToggleHud)
+
     App.mouseCtrls := mouseCtrls
     App.keyCtrls   := keyCtrls
 
@@ -170,6 +177,70 @@ ToggleOnTop(*) {
     global App
     App.onTop := App.topCheck.Value
     App.gui.Opt(App.onTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
+}
+
+; ---- Status HUD -------------------------------------------
+; A small always-on-top overlay in the top-right corner that shows
+; whether the clicker is running and the running count. It's a
+; separate, click-through window so it never steals focus or blocks
+; clicks on whatever is underneath it.
+ToggleHud(*) {
+    global App
+    App.hud := App.hudCheck.Value
+    if App.hud
+        ShowHud()
+    else if App.HasOwnProp("hudGui")
+        App.hudGui.Hide()
+}
+
+ShowHud() {
+    global App
+    if !App.HasOwnProp("hudGui")
+        BuildHud()
+    h := App.hudGui
+    h.Show("Hide AutoSize")                 ; realize & size to its text, still hidden
+    WinGetPos(, , &w, , h.Hwnd)             ; actual window width, in real pixels
+    MonitorGetWorkArea(MonitorGetPrimary(), , &top, &right)
+    h.Show(Format("x{} y{} NoActivate", right - w, top))   ; flush into the top-right corner
+    WinSetTransparent(225, h.Hwnd)          ; slightly see-through
+    UpdateHud()
+}
+
+BuildHud() {
+    global App
+    ; -DPIScale so positions/sizes are real pixels (matches MonitorGetWorkArea),
+    ; which keeps the window fully on-screen at any display scaling.
+    h := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "AutoClicker HUD")
+    App.hudGui := h
+    h.Opt("+E0x20")                  ; WS_EX_TRANSPARENT -> clicks pass through
+    h.MarginX := 14, h.MarginY := 8
+    h.BackColor := "161616"
+    h.SetFont("s9 cDDDDDD", "Segoe UI")
+    App.hudStatus := h.Add("Text", "w180 Center", "OFF")
+    App.hudStatus.SetFont("s14 bold")
+    App.hudCount  := h.Add("Text", "w180 Center", "Idle")
+    App.hudCount.SetFont("s8 cAAAAAA")
+    App.hudCps    := h.Add("Text", "w180 Center", "0.0 cps")
+    App.hudCps.SetFont("s9 cCCCCCC")
+}
+
+UpdateHud() {
+    global App
+    if !App.hud || !App.HasOwnProp("hudStatus")
+        return
+    noun := App.action.Value = 2 ? "presses" : "clicks"
+    unit := App.action.Value = 2 ? "kps" : "cps"
+    if App.clicking {
+        App.hudStatus.SetFont("c33DD55")          ; green = running
+        App.hudStatus.Text := "ON"
+        cps := CurrentCps()
+    } else {
+        App.hudStatus.SetFont("c888888")          ; gray = stopped
+        App.hudStatus.Text := "OFF"
+        cps := 0.0
+    }
+    App.hudCount.Text := (App.clicking || App.count > 0) ? App.count " " noun : "Idle"
+    App.hudCps.Text := Format("{:.1f} {}", cps, unit)
 }
 
 ; Show only the controls relevant to the selected Action (mouse vs key).
@@ -317,6 +388,7 @@ StartClicking() {
         return
     App.clicking := true
     App.count := 0
+    App.clickTimes := []              ; reset the CPS measurement window
     App.posIndex := 0                 ; restart the fixed-position cycle
     UpdateStatus()
     SetTimer(DoClick, -NextInterval())
@@ -337,6 +409,7 @@ DoClick() {
         return
     PerformAction()
     App.count += 1
+    RecordClick()
     UpdateStatus()
     if (App.repeatCount.Value && App.count >= Integer(App.countEdit.Value)) {
         StopClicking()
@@ -382,6 +455,27 @@ NextInterval() {
     return base < 1 ? 1 : base
 }
 
+; ---- Clicks-per-second measurement ------------------------
+; Keep a timestamp per action within a 1-second window; the live
+; rate is the average over that window (stable across fast/slow rates).
+RecordClick() {
+    global App
+    now := A_TickCount
+    App.clickTimes.Push(now)
+    while (App.clickTimes.Length > 0 && now - App.clickTimes[1] > 1000)
+        App.clickTimes.RemoveAt(1)
+}
+
+CurrentCps() {
+    global App
+    t := App.clickTimes
+    n := t.Length
+    if (n < 2)
+        return 0.0
+    span := t[n] - t[1]
+    return span > 0 ? Round((n - 1) * 1000.0 / span, 1) : 0.0
+}
+
 UpdateStatus() {
     global App
     noun := App.action.Value = 2 ? "presses" : "clicks"
@@ -389,6 +483,7 @@ UpdateStatus() {
         App.status.Value := "Running... (" App.count " " noun ")"
     else
         App.status.Value := App.count > 0 ? "Stopped (" App.count " " noun ")" : "Idle"
+    UpdateHud()
 }
 
 ; ---- Click-to-pick for the fixed position -----------------
